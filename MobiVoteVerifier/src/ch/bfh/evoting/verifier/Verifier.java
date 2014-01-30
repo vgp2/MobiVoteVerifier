@@ -39,14 +39,17 @@ import ch.bfh.unicrypt.math.algebra.general.classes.FiniteByteArrayElement;
 import ch.bfh.unicrypt.math.algebra.general.classes.Subset;
 import ch.bfh.unicrypt.math.algebra.general.classes.Tuple;
 import ch.bfh.unicrypt.math.algebra.general.interfaces.Element;
-import ch.bfh.unicrypt.math.algebra.multiplicative.classes.GStarMod;
 import ch.bfh.unicrypt.math.algebra.multiplicative.classes.GStarModElement;
 import ch.bfh.unicrypt.math.algebra.multiplicative.classes.GStarModSafePrime;
 import ch.bfh.unicrypt.math.function.classes.ProductFunction;
 import ch.bfh.unicrypt.math.function.interfaces.Function;
 import ch.bfh.unicrypt.math.helper.ByteArray;
 
-
+/**
+ * Class implementing a verifier for MobiVote HKRS12 application
+ * @author Philémon von Bergen
+ *
+ */
 public class Verifier {
 
 	private static final boolean DEBUG = false;
@@ -75,6 +78,9 @@ public class Verifier {
 	 */
 	public static void main(String[] args) {
 	
+		/*
+		 * Reading files given as parameters
+		 */
 		if(args.length<1){
 			//Not enough arguments
 			System.out.println("You must indicate the location of the XML file containing the data to verify! You can also indicate the files of different participants.");
@@ -137,6 +143,9 @@ public class Verifier {
 			return;
 		}
 
+		/*
+		 * Create the initializations needed by the protocol
+		 */
 		G_q = GStarModSafePrime.getInstance(new BigInteger(poll.getP()));
 		Z_q = G_q.getZModOrder();
 		generator = G_q.getElement(new BigInteger(poll.getGenerator().getValue())); 
@@ -150,13 +159,13 @@ public class Verifier {
 		}
 
 
-		/**
+		/*
 		 * Verify the dependence between cryptographic values and the vote properties
 		 */
 		verifyDependencyTextCrypto();
 
 
-		/**
+		/*
 		 * Verify the proofs for the user
 		 */
 		System.out.println();
@@ -244,14 +253,23 @@ public class Verifier {
 			Tuple participantTuple = prepareParticipantOtherInput(p);
 			otherInput = Tuple.getInstance(participantTuple, pollTuple);
 
+			/*
+			 * Verify proof of knowledge 
+			 */
 			System.out.print("\t\tVerifying proof of knowledge of x value...");
 			verifyProofOfKnowledgeOfX(k);
 
+			/*
+			 * Verify proof of validity 
+			 */
 			if(validityProof[k]!=null){
 				System.out.print("\t\tVerifying proof of valid vote...");
 				verifyValidityProof(k);
 			}
 
+			/*
+			 * Verify proof of equality 
+			 */
 			if(equalityProof[k]!=null){
 				System.out.print("\t\tVerifying proof of equality between discrete logarithm g^x and h_hat^x...");
 				verifyEqualityProof(k);
@@ -270,6 +288,9 @@ public class Verifier {
 	}
 
 
+	/**
+	 * Verify the dependence between cryptographic values and the vote properties
+	 */
 	private static void verifyDependencyTextCrypto() {
 		System.out.println();
 		System.out.print("Verifying the dependence between cryptographic values and the vote properties...");
@@ -291,7 +312,7 @@ public class Verifier {
 		ReferenceRandomByteSequence rrs = PseudoRandomOracle.getInstance().getReferenceRandomByteSequence(ByteArray.getInstance(buffer.array()));
 		GStarModElement verificationGenerator = G_q.getIndependentGenerator(1, rrs);
 
-		if(G_q.areEqual(generator, verificationGenerator)){
+		if(G_q.areEquivalent(generator, verificationGenerator)){
 			System.out.print("\t\t\t\tOK\n");
 		} else {
 			System.out.print("\t\t\t\tFAILED\n");
@@ -300,6 +321,9 @@ public class Verifier {
 
 	}
 
+	/**
+	 * Verify the proof of knowledge of the x value
+	 */
 	private static void verifyProofOfKnowledgeOfX(int k) {
 		if(DEBUG)System.out.println("\n\t\t\tValue of a: "+a[k]);
 		if(DEBUG)System.out.println("\t\t\tValue of proof: "+proofForX[k]);
@@ -330,7 +354,9 @@ public class Verifier {
 	}
 
 
-
+	/**
+	 * Verify the validity of the vote
+	 */
 	private static void verifyValidityProof(int k) {
 		Element[] possibleVotes = new Element[poll.getOptions().size()];
 		for(int j=0; j<possibleVotes.length;j++){
@@ -355,7 +381,9 @@ public class Verifier {
 		}
 	}
 
-
+	/**
+	 * Verify the proof of equality between discrete logarithms
+	 */
 	private static void verifyEqualityProof(int k) {
 		//Function g^r
 		StandardCommitmentScheme cs3 = StandardCommitmentScheme.getInstance(generator);
@@ -380,7 +408,10 @@ public class Verifier {
 		}
 	}
 
-
+	/**
+	 * Recompute the result with the values contained in the XML file, and compare the obtained result
+	 * with the result described in the XML file
+	 */
 	private static void computeResult() {
 		Element product1 = G_q.getElement(BigInteger.valueOf(1));
 		for(int j=0; j< poll.getParticipants().size(); j++){
@@ -404,7 +435,7 @@ public class Verifier {
 
 		Element product2 = generator.selfApply(sumVote);
 
-		if(G_q.areEqual(product1, product2)){
+		if(G_q.areEquivalent(product1, product2)){
 			System.out.print("\t\t\t\t\t\t\t\t\t\t\t\tCORRECT\n");
 			System.out.println("\tResult was:");
 			for(XMLOption op : poll.getOptions()){
@@ -419,6 +450,11 @@ public class Verifier {
 		}
 	}
 
+	/**
+	 * Return all the important data of the participant that should be used in the hash used in ZK proofs
+	 * @param p participant
+	 * @return all the important data of the participant that should be used in the hash used in ZK proofs
+	 */
 	private static Tuple prepareParticipantOtherInput(XMLParticipant p) {
 		Element index = N.getInstance().getElement(BigInteger.valueOf(p.getProtocolParticipantIndex()));
 		ByteArrayElement proverId = ByteArrayMonoid.getInstance().getElement(p.getUniqueId().getBytes());
@@ -426,6 +462,13 @@ public class Verifier {
 		return Tuple.getInstance(index, proverId);
 	}
 
+	/**
+	 * Return all the important data of the poll that should be used in the hash used in ZK proofs
+	 * @param poll Poll object
+	 * @param optionsRepresentations Representation values of the options
+	 * @param generator Generator used in the protocol
+	 * @return Return all the important data of the poll that should be used in the hash used in ZK proofs
+	 */
 	private static Tuple preparePollOtherInput(XMLPoll poll, Element[] optionsRepresentations, Element generator) {
 		String otherHashInputString = poll.getQuestion();
 		for(XMLOption op:poll.getOptions()){
@@ -441,8 +484,5 @@ public class Verifier {
 		return Tuple.getInstance(optionsRepresentationsTuple, otherHashInput, generator);
 
 	}
-
-
-	
 
 }
