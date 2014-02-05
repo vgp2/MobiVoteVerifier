@@ -158,7 +158,9 @@ public class Verifier {
 			i++;
 		}
 
-
+		System.out.println();
+		System.out.println("Verifying vote: \""+poll.getQuestion()+"\"");
+		
 		/*
 		 * Verify the dependence between cryptographic values and the vote properties
 		 */
@@ -437,6 +439,7 @@ public class Verifier {
 
 		if(G_q.areEquivalent(product1, product2)){
 			System.out.print("\t\t\t\t\t\t\t\t\t\t\t\tCORRECT\n");
+			System.out.println("\tQuestion was: "+poll.getQuestion());
 			System.out.println("\tResult was:");
 			for(XMLOption op : poll.getOptions()){
 				String votesText = " votes";
