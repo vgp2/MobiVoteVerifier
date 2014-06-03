@@ -22,15 +22,12 @@ import ch.bfh.evoting.verifier.entities.XMLOption;
 import ch.bfh.evoting.verifier.entities.XMLParticipant;
 import ch.bfh.evoting.verifier.entities.XMLPoll;
 import ch.bfh.evoting.verifier.entities.XMLZqElement;
-import ch.bfh.unicrypt.crypto.proofgenerator.challengegenerator.classes.StandardNonInteractiveSigmaChallengeGenerator;
-import ch.bfh.unicrypt.crypto.proofgenerator.challengegenerator.interfaces.SigmaChallengeGenerator;
-import ch.bfh.unicrypt.crypto.proofgenerator.classes.ElGamalEncryptionValidityProofGenerator;
-import ch.bfh.unicrypt.crypto.proofgenerator.classes.PreimageEqualityProofGenerator;
-import ch.bfh.unicrypt.crypto.proofgenerator.classes.PreimageProofGenerator;
-import ch.bfh.unicrypt.crypto.random.classes.PseudoRandomOracle;
-import ch.bfh.unicrypt.crypto.random.classes.ReferenceRandomByteSequence;
+import ch.bfh.unicrypt.crypto.proofsystem.classes.ElGamalEncryptionValidityProofSystem;
+import ch.bfh.unicrypt.crypto.proofsystem.classes.PreimageEqualityProofSystem;
+import ch.bfh.unicrypt.crypto.proofsystem.classes.PreimageProofSystem;
 import ch.bfh.unicrypt.crypto.schemes.commitment.classes.StandardCommitmentScheme;
 import ch.bfh.unicrypt.crypto.schemes.encryption.classes.ElGamalEncryptionScheme;
+import ch.bfh.unicrypt.helper.array.ByteArray;
 import ch.bfh.unicrypt.math.algebra.concatenative.classes.ByteArrayElement;
 import ch.bfh.unicrypt.math.algebra.concatenative.classes.ByteArrayMonoid;
 import ch.bfh.unicrypt.math.algebra.dualistic.classes.N;
@@ -43,11 +40,12 @@ import ch.bfh.unicrypt.math.algebra.multiplicative.classes.GStarModElement;
 import ch.bfh.unicrypt.math.algebra.multiplicative.classes.GStarModSafePrime;
 import ch.bfh.unicrypt.math.function.classes.ProductFunction;
 import ch.bfh.unicrypt.math.function.interfaces.Function;
-import ch.bfh.unicrypt.math.helper.ByteArray;
+import ch.bfh.unicrypt.random.classes.PseudoRandomOracle;
+import ch.bfh.unicrypt.random.classes.ReferenceRandomByteSequence;
 
 /**
  * Class implementing a verifier for MobiVote HKRS12 application
- * @author Philémon von Bergen
+ * @author Phil��mon von Bergen
  *
  */
 public class Verifier {
@@ -164,7 +162,8 @@ public class Verifier {
 		/*
 		 * Verify the dependence between cryptographic values and the vote properties
 		 */
-		verifyDependencyTextCrypto();
+		//Not used anymore
+		//verifyDependencyTextCrypto();
 
 
 		/*
@@ -303,12 +302,12 @@ public class Verifier {
 		}
 
 		Tuple tuple = Tuple.getInstance(representations);
-		FiniteByteArrayElement representationsElement = tuple.getHashValue();
+		ByteArray representationsElement = tuple.getHashValue();
 		ByteArrayElement textElement = ByteArrayMonoid.getInstance().getElement(texts.getBytes());
 
-		ByteBuffer buffer = ByteBuffer.allocate(textElement.getValue().getLength()+representationsElement.getValue().getLength());
+		ByteBuffer buffer = ByteBuffer.allocate(textElement.getValue().getLength()+representationsElement.getLength());
 		buffer.put(textElement.getValue().getAll());
-		buffer.put(representationsElement.getValue().getAll());
+		buffer.put(representationsElement.getAll());
 		buffer.flip(); 
 
 		ReferenceRandomByteSequence rrs = PseudoRandomOracle.getInstance().getReferenceRandomByteSequence(ByteArray.getInstance(buffer.array()));
@@ -339,15 +338,14 @@ public class Verifier {
 		if(DEBUG)System.out.println("\t\t\tCommitmentFunction: "+f);
 		if(DEBUG)System.out.println("\t\t\tOtherInput: "+otherInput);
 
-		SigmaChallengeGenerator scg = StandardNonInteractiveSigmaChallengeGenerator.getInstance(f, otherInput);
 
-		PreimageProofGenerator spg = PreimageProofGenerator.getInstance(scg, f);
-
+		PreimageProofSystem spg = PreimageProofSystem.getInstance(cs.getCommitmentFunction(), otherInput);
+		
 		//Generator and index of the participant has also to be hashed in the proof
-		if(DEBUG)System.out.println("\t\t\tVerify proof: "+spg.verify(proofForX[k], a[k]).getValue());
+		if(DEBUG)System.out.println("\t\t\tVerify proof: "+spg.verify(proofForX[k], a[k]));
 		if(DEBUG)System.out.println();
 		if(!DEBUG){
-			if(spg.verify(proofForX[k], a[k]).getValue()){
+			if(spg.verify(proofForX[k], a[k])){
 				System.out.print("\t\t\t\t\t\t\tCORRECT\n");
 			} else {
 				System.out.print("\t\t\t\t\t\t\tWRONG\n");
@@ -367,16 +365,15 @@ public class Verifier {
 
 		ElGamalEncryptionScheme ees = ElGamalEncryptionScheme.getInstance(generator);
 
-		SigmaChallengeGenerator scg2 = ElGamalEncryptionValidityProofGenerator.createNonInteractiveChallengeGenerator(ees, possibleVotes.length, otherInput);
 		Subset possibleVotesSet = Subset.getInstance(G_q, possibleVotes);
-		ElGamalEncryptionValidityProofGenerator vpg = ElGamalEncryptionValidityProofGenerator.getInstance(
-				scg2, ees, h[k], possibleVotesSet);
+		ElGamalEncryptionValidityProofSystem vpg = ElGamalEncryptionValidityProofSystem.getInstance(
+				ees, h[k], possibleVotesSet, otherInput);
 
 		//simulate the ElGamal cipher text (a,b) = (ai,bi);
 		Tuple publicInput = Tuple.getInstance(a[k], b[k]);
-
+		
 		if(DEBUG) System.out.println("Validity proof: "+ validityProof[k]);
-		if(vpg.verify(validityProof[k], publicInput).getValue()){
+		if(vpg.verify(validityProof[k], publicInput)){
 			System.out.print("\t\t\t\t\t\t\t\tCORRECT\n");
 		} else {
 			System.out.print("\t\t\t\t\t\t\t\tWRONG\n");
@@ -397,13 +394,13 @@ public class Verifier {
 
 		ProductFunction f3 = ProductFunction.getInstance(f1, f2);
 
-		SigmaChallengeGenerator scg3 = StandardNonInteractiveSigmaChallengeGenerator.getInstance(f3, otherInput);
+		//SigmaChallengeGenerator scg3 = StandardNonInteractiveSigmaChallengeGenerator.getInstance(f3, otherInput);
 
-		PreimageEqualityProofGenerator piepg = PreimageEqualityProofGenerator.getInstance(scg3, f1,f2);
+		PreimageEqualityProofSystem piepg = PreimageEqualityProofSystem.getInstance(f3, otherInput);
 
 		Tuple publicInput3 = Tuple.getInstance(a[k], hHatPowX[k]);
 
-		if(piepg.verify(equalityProof[k], publicInput3).getValue()){
+		if(piepg.verify(equalityProof[k], publicInput3)){
 			System.out.print("\t\t\tCORRECT\n");
 		} else {
 			System.out.print("\t\t\tWRONG\n");
