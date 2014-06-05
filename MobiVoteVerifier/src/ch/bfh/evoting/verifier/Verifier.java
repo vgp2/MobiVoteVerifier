@@ -3,6 +3,7 @@ package ch.bfh.evoting.verifier;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
+import java.lang.reflect.Array;
 import java.math.BigInteger;
 import java.nio.ByteBuffer;
 import java.nio.file.Files;
@@ -14,14 +15,13 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
+import org.apache.commons.codec.binary.Base64;
 import org.simpleframework.xml.Serializer;
 import org.simpleframework.xml.core.Persister;
 
-import ch.bfh.evoting.verifier.entities.XMLGqPair;
 import ch.bfh.evoting.verifier.entities.XMLOption;
 import ch.bfh.evoting.verifier.entities.XMLParticipant;
 import ch.bfh.evoting.verifier.entities.XMLPoll;
-import ch.bfh.evoting.verifier.entities.XMLZqElement;
 import ch.bfh.unicrypt.crypto.proofsystem.classes.ElGamalEncryptionValidityProofSystem;
 import ch.bfh.unicrypt.crypto.proofsystem.classes.PreimageEqualityProofSystem;
 import ch.bfh.unicrypt.crypto.proofsystem.classes.PreimageProofSystem;
@@ -31,11 +31,14 @@ import ch.bfh.unicrypt.helper.array.ByteArray;
 import ch.bfh.unicrypt.math.algebra.concatenative.classes.ByteArrayElement;
 import ch.bfh.unicrypt.math.algebra.concatenative.classes.ByteArrayMonoid;
 import ch.bfh.unicrypt.math.algebra.dualistic.classes.N;
+import ch.bfh.unicrypt.math.algebra.dualistic.classes.Z;
 import ch.bfh.unicrypt.math.algebra.dualistic.classes.ZMod;
 import ch.bfh.unicrypt.math.algebra.general.classes.FiniteByteArrayElement;
+import ch.bfh.unicrypt.math.algebra.general.classes.ProductGroup;
 import ch.bfh.unicrypt.math.algebra.general.classes.Subset;
 import ch.bfh.unicrypt.math.algebra.general.classes.Tuple;
 import ch.bfh.unicrypt.math.algebra.general.interfaces.Element;
+import ch.bfh.unicrypt.math.algebra.general.interfaces.Group;
 import ch.bfh.unicrypt.math.algebra.multiplicative.classes.GStarModElement;
 import ch.bfh.unicrypt.math.algebra.multiplicative.classes.GStarModSafePrime;
 import ch.bfh.unicrypt.math.function.classes.ProductFunction;
@@ -67,6 +70,7 @@ public class Verifier {
 	private static Element[] equalityProof;
 
 	private static boolean recoveryNeeded = false;
+	private static Z Zgroup;
 
 	/**
 	 * This program is a verifier for MobiVote application with HKRS12 protocol
@@ -146,13 +150,14 @@ public class Verifier {
 		 */
 		G_q = GStarModSafePrime.getInstance(new BigInteger(poll.getP()));
 		Z_q = G_q.getZModOrder();
-		generator = G_q.getElement(new BigInteger(poll.getGenerator().getValue())); 
+		Zgroup = Z.getInstance();
+		generator = poll.getGenerator().getValue(G_q);
 
 
 		representations = new Element[poll.getOptions().size()];
 		int i=0;
 		for(XMLOption op:poll.getOptions()){
-			representations[i]=Z_q.getElement(new BigInteger(op.getRepresentation().getValue()));
+			representations[i]= op.getRepresentation().getValue(Z_q);
 			i++;
 		}
 
@@ -162,7 +167,7 @@ public class Verifier {
 		/*
 		 * Verify the dependence between cryptographic values and the vote properties
 		 */
-		//Not used anymore
+		//Not used anymore, implicitly done with otherInputs of proofs
 		//verifyDependencyTextCrypto();
 
 
@@ -186,69 +191,57 @@ public class Verifier {
 			System.out.println("\tParticipant "+p.getIdentification()+" ("+p.getUniqueId()+")");
 
 			if(p.getAi()!=null){
-				a[k] = G_q.getElement(new BigInteger(p.getAi().getValue()));
+				a[k] = p.getAi().getValue(G_q);
 				if(DEBUG)System.out.println("Value a: "+a[k]);
 			}
 			if(p.getHi()!=null){
-				h[k] = G_q.getElement(new BigInteger(p.getHi().getValue()));
+				h[k] = p.getHi().getValue(G_q);
 				if(DEBUG)System.out.println("Value h: "+h[k]);
 			}
 			if(p.getBi()!=null){
-				b[k] = G_q.getElement(new BigInteger(p.getBi().getValue()));
+				b[k] = p.getBi().getValue(G_q);
 				if(DEBUG)System.out.println("Value b: "+b[k]);
 			}
 			if(p.getHiHat()!=null){
-				hHat[k] = G_q.getElement(new BigInteger(p.getHiHat().getValue()));
+				hHat[k] = p.getHiHat().getValue(G_q);
 				if(DEBUG)System.out.println("Value h hat: "+hHat[k]);
 			}
 			if(p.getHiHatPowXi()!=null){
-				hHatPowX[k] = G_q.getElement(new BigInteger(p.getHiHatPowXi().getValue()));
+				hHatPowX[k] = p.getHiHatPowXi().getValue(G_q);
 				if(DEBUG)System.out.println("Value h hat ^ x: "+hHatPowX[k]);
 			}
 
 			if(p.getProofForXi()!=null){
-				proofForX[k] = Tuple.getInstance(G_q.getElement(new BigInteger(p.getProofForXi().getValue11().getValue())),
-						Z_q.getElement(new BigInteger(p.getProofForXi().getValue12().getValue())),
-						Z_q.getElement(new BigInteger(p.getProofForXi().getValue13().getValue())));
+				ProductGroup group = ProductGroup .getInstance(G_q,Zgroup,Z_q);
+				
+				proofForX[k] = p.getProofForXi().getValue(group);
 			}
 			
 			if(p.getProofValidVote()!=null){
-				List<Tuple> subValues11 = new ArrayList<Tuple>();
-				for(XMLGqPair pair : p.getProofValidVote().getValue11()){
-					Tuple tuple = Tuple.getInstance(G_q.getElement(new BigInteger(pair.getValue1().getValue())),
-										G_q.getElement(new BigInteger(pair.getValue2().getValue())));
-					subValues11.add(tuple);
-				}
-				Tuple[] a11 = new Tuple[subValues11.size()];
-				Tuple value11 = Tuple.getInstance(subValues11.toArray(a11));
 				
-				List<Element> subValues12 = new ArrayList<Element>();
-				for(XMLZqElement element : p.getProofValidVote().getValue12()){
-					Element e = Z_q.getElement(new BigInteger(element.getValue()));
-					subValues12.add(e);
+				Group[] tripleElement1Groups = new Group[poll.getOptions().size()];
+				Group[] tripleElement2Groups = new Group[poll.getOptions().size()];
+				Group[] tripleElement3Groups = new Group[poll.getOptions().size()];
+				for(i=0; i<poll.getOptions().size();i++){
+					tripleElement1Groups[i]= ProductGroup.getInstance(G_q,G_q);
+					tripleElement2Groups[i]=Zgroup;
+					tripleElement3Groups[i]=Z_q;
 				}
-				Element[] a12 = new Element[subValues12.size()];;
-				Tuple value12 = Tuple.getInstance(subValues12.toArray(a12));
-
-				List<Element> subValues13 = new ArrayList<Element>();
-				for(XMLZqElement element : p.getProofValidVote().getValue13()){
-					Element e = Z_q.getElement(new BigInteger(element.getValue()));
-					subValues13.add(e);
-				}
-				Element[] a13 = new Element[subValues13.size()];;
-				Tuple value13 = Tuple.getInstance(subValues13.toArray(a13));
-
-				validityProof[k] = Tuple.getInstance(value11, value12, value13);
-
+				ProductGroup tripleElement1 = ProductGroup.getInstance(tripleElement1Groups);
+				ProductGroup tripleElement2 = ProductGroup.getInstance(tripleElement2Groups);
+				ProductGroup tripleElement3 = ProductGroup.getInstance(tripleElement3Groups);
+				ProductGroup group = ProductGroup.getInstance(tripleElement1, tripleElement2, tripleElement3);
+				
+				validityProof[k] = p.getProofValidVote().getValue(group);
+			
 				if(DEBUG)System.out.println("Proof of validity: "+validityProof[k]);		
 			}
 			
 			if(p.getProofForHiHat()!=null){
 				recoveryNeeded = true;
-				Tuple value11 = Tuple.getInstance(G_q.getElement(new BigInteger(p.getProofForHiHat().getValue111().getValue())),
-						G_q.getElement(new BigInteger(p.getProofForHiHat().getValue112().getValue())));
-				equalityProof[k] = Tuple.getInstance(value11, Z_q.getElement(new BigInteger(p.getProofForHiHat().getValue12().getValue())),
-						Z_q.getElement(new BigInteger(p.getProofForHiHat().getValue13().getValue())));
+				ProductGroup group = ProductGroup.getInstance(ProductGroup.getInstance(G_q, G_q),Zgroup,Z_q);
+				
+				equalityProof[k] = p.getProofForHiHat().getValue(group);
 			}
 
 			Tuple participantTuple = prepareParticipantOtherInput(p);
@@ -289,38 +282,38 @@ public class Verifier {
 	}
 
 
-	/**
-	 * Verify the dependence between cryptographic values and the vote properties
-	 */
-	private static void verifyDependencyTextCrypto() {
-		System.out.println();
-		System.out.print("Verifying the dependence between cryptographic values and the vote properties...");
-		String texts = poll.getQuestion();
-
-		for(XMLOption op:poll.getOptions()){
-			texts += op.getText();
-		}
-
-		Tuple tuple = Tuple.getInstance(representations);
-		ByteArray representationsElement = tuple.getHashValue();
-		ByteArrayElement textElement = ByteArrayMonoid.getInstance().getElement(texts.getBytes());
-
-		ByteBuffer buffer = ByteBuffer.allocate(textElement.getValue().getLength()+representationsElement.getLength());
-		buffer.put(textElement.getValue().getAll());
-		buffer.put(representationsElement.getAll());
-		buffer.flip(); 
-
-		ReferenceRandomByteSequence rrs = PseudoRandomOracle.getInstance().getReferenceRandomByteSequence(ByteArray.getInstance(buffer.array()));
-		GStarModElement verificationGenerator = G_q.getIndependentGenerator(1, rrs);
-
-		if(G_q.areEquivalent(generator, verificationGenerator)){
-			System.out.print("\t\t\t\tOK\n");
-		} else {
-			System.out.print("\t\t\t\tFAILED\n");
-			System.out.println("The given poll and the given cryptographic values don't match together.");
-		}
-
-	}
+//	/**
+//	 * Verify the dependence between cryptographic values and the vote properties
+//	 */
+//	private static void verifyDependencyTextCrypto() {
+//		System.out.println();
+//		System.out.print("Verifying the dependence between cryptographic values and the vote properties...");
+//		String texts = poll.getQuestion();
+//
+//		for(XMLOption op:poll.getOptions()){
+//			texts += op.getText();
+//		}
+//
+//		Tuple tuple = Tuple.getInstance(representations);
+//		ByteArray representationsElement = tuple.getHashValue();
+//		ByteArrayElement textElement = ByteArrayMonoid.getInstance().getElement(texts.getBytes());
+//
+//		ByteBuffer buffer = ByteBuffer.allocate(textElement.getValue().getLength()+representationsElement.getLength());
+//		buffer.put(textElement.getValue().getAll());
+//		buffer.put(representationsElement.getAll());
+//		buffer.flip(); 
+//
+//		ReferenceRandomByteSequence rrs = PseudoRandomOracle.getInstance().getReferenceRandomByteSequence(ByteArray.getInstance(buffer.array()));
+//		GStarModElement verificationGenerator = G_q.getIndependentGenerator(1, rrs);
+//
+//		if(G_q.areEquivalent(generator, verificationGenerator)){
+//			System.out.print("\t\t\t\tOK\n");
+//		} else {
+//			System.out.print("\t\t\t\tFAILED\n");
+//			System.out.println("The given poll and the given cryptographic values don't match together.");
+//		}
+//
+//	}
 
 	/**
 	 * Verify the proof of knowledge of the x value
@@ -334,10 +327,7 @@ public class Verifier {
 		StandardCommitmentScheme cs = StandardCommitmentScheme.getInstance(generator);
 		if(DEBUG)System.out.println("\t\t\tStandardCommitmentScheme: "+cs);
 
-		Function f = cs.getCommitmentFunction();
-		if(DEBUG)System.out.println("\t\t\tCommitmentFunction: "+f);
 		if(DEBUG)System.out.println("\t\t\tOtherInput: "+otherInput);
-
 
 		PreimageProofSystem spg = PreimageProofSystem.getInstance(cs.getCommitmentFunction(), otherInput);
 		
@@ -355,7 +345,7 @@ public class Verifier {
 
 
 	/**
-	 * Verify the validity of the vote
+	 * Verify the validity proof of the vote
 	 */
 	private static void verifyValidityProof(int k) {
 		Element[] possibleVotes = new Element[poll.getOptions().size()];
@@ -394,8 +384,6 @@ public class Verifier {
 
 		ProductFunction f3 = ProductFunction.getInstance(f1, f2);
 
-		//SigmaChallengeGenerator scg3 = StandardNonInteractiveSigmaChallengeGenerator.getInstance(f3, otherInput);
-
 		PreimageEqualityProofSystem piepg = PreimageEqualityProofSystem.getInstance(f3, otherInput);
 
 		Tuple publicInput3 = Tuple.getInstance(a[k], hHatPowX[k]);
@@ -415,7 +403,9 @@ public class Verifier {
 		Element product1 = G_q.getElement(BigInteger.valueOf(1));
 		for(int j=0; j< poll.getParticipants().size(); j++){
 			if(b[j]==null)continue;
+			
 			if(recoveryNeeded){
+				
 				if(hHatPowX[j]==null){
 					//this was an excluded participant so we don't care about his values in the tally
 					continue;
@@ -426,9 +416,10 @@ public class Verifier {
 				product1=product1.apply(b[j]);
 			}
 		}
-
+		
 		Element sumVote = Z_q.getElement(BigInteger.valueOf(0));
 		for(int j=0; j<poll.getOptions().size();j++){
+//			System.out.println("Option: "+poll.getOptions().get(j).getText()+" "+poll.getOptions().get(j).getRepresentation().getValue(Z_q));
 			sumVote = sumVote.apply(representations[j].selfApply(poll.getOptions().get(j).getVotes()));
 		}
 
@@ -480,7 +471,6 @@ public class Verifier {
 
 		ByteArrayElement otherHashInput = ByteArrayMonoid.getInstance().getElement(otherHashInputString.getBytes());
 		Tuple optionsRepresentationsTuple = Tuple.getInstance(optionsRepresentations);
-
 		return Tuple.getInstance(optionsRepresentationsTuple, otherHashInput, generator);
 
 	}

@@ -42,38 +42,26 @@
  */
 package ch.bfh.evoting.verifier.entities;
 
+import org.apache.commons.codec.binary.Base64;
 import org.simpleframework.xml.Element;
 
-public class XMLGqPair {
-	
+import ch.bfh.unicrypt.helper.array.ByteArray;
+import ch.bfh.unicrypt.helper.bytetree.ByteTree;
+import ch.bfh.unicrypt.math.algebra.general.interfaces.Group;
+
+
+public class XMLElement {
+
 	@Element
-	private XMLGqElement value1;
-	@Element
-	private XMLGqElement value2;
-
-	public XMLGqPair(){}
+	private String value;
 	
-	public XMLGqPair(XMLGqElement value1, XMLGqElement value2){
-		this.value1 = value1;
-		this.value2 = value2;
-	}
-
-	public XMLGqElement getValue1() {
-		return value1;
-	}
-
-	public void setValue1(XMLGqElement value1) {
-		this.value1 = value1;
-	}
-
-	public XMLGqElement getValue2() {
-		return value2;
-	}
-
-	public void setValue2(XMLGqElement value2) {
-		this.value2 = value2;
+	public XMLElement(){}
+	
+	public XMLElement(ch.bfh.unicrypt.math.algebra.general.interfaces.Element element) {
+		this.value = Base64.encodeBase64String(element.getByteTree().getByteArray().getAll());
 	}
 	
-	
-	
+	public ch.bfh.unicrypt.math.algebra.general.interfaces.Element getValue(Group group) {
+		return group.getElementFrom(ByteTree.getInstanceFrom(ByteArray.getInstance(Base64.decodeBase64(value))));
+	}
 }
